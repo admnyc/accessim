@@ -2213,19 +2213,33 @@ function schoolPassingTime(day,seconds){
  return null;
 }
 function ensurePassingTimeTab(id,anchor){
- let tab=$(id);if(tab||!anchor)return tab;
- tab=document.createElement('div');tab.id=id;tab.className='school-passing-time';tab.hidden=true;tab.setAttribute('role','timer');tab.setAttribute('aria-live','off');
- tab.innerHTML='<span class="passing-time-label">Passing Time</span><strong class="passing-time-countdown"></strong><span class="passing-time-next"></span><div class="passing-time-track"><span></span></div>';
- anchor.insertAdjacentElement('afterend',tab);return tab;
+ let tab=$(id);if(!anchor)return tab;
+ if(!tab){
+  tab=document.createElement('div');tab.id=id;tab.className='school-passing-time';
+  tab.setAttribute('role','timer');tab.setAttribute('aria-live','off');
+  tab.innerHTML='<span class="passing-time-label objective-phase-label">Passing Time</span><strong class="passing-time-countdown objective-phase-time"></strong><span class="passing-time-next" hidden></span><div class="passing-time-track"><span></span></div>';
+ }
+ if(tab.parentElement!==anchor)anchor.appendChild(tab);
+ return tab;
 }
 function updateSchoolPassingTime(day,seconds){
- const value=schoolPassingTime(day,seconds);
+ const active=schoolPassingTime(day,seconds);
+ let upcoming=null;
+ if(day!=='Sat'&&day!=='Sun'){
+  for(let i=0;i<periods.length-1;i++){
+   const start=periods[i][2]*60,end=periods[i+1][1]*60;
+   if(end>start&&start>seconds){upcoming={next:periods[i+1][0],duration:end-start};break;}
+  }
+ }
+ const value=active||upcoming;
  const tabs=[ensurePassingTimeTab('objective-passing-time',$('objective-phase-progress')),ensurePassingTimeTab('material-passing-time',$('material-phase-progress'))];
- for(const tab of tabs){if(!tab)continue;tab.hidden=!value;if(!value)continue;
-  tab.querySelector('.passing-time-countdown').textContent=countdown(value.remaining);
-  tab.querySelector('.passing-time-next').textContent=value.next+' starts next';
-  tab.querySelector('.passing-time-track>span').style.width=(value.progress*100)+'%';
-  tab.setAttribute('aria-label','Passing time: '+countdown(value.remaining)+' until '+value.next);
+ for(const tab of tabs){
+  if(!tab)continue;
+  tab.hidden=!value;tab.classList.toggle('active',!!active);
+  if(!value)continue;
+  tab.querySelector('.passing-time-countdown').textContent=countdown(active?active.remaining:value.duration);
+  tab.querySelector('.passing-time-track>span').style.width=(active?active.progress*100:0)+'%';
+  tab.setAttribute('aria-label',active?'Passing time: '+countdown(active.remaining)+' until '+value.next:'Upcoming passing time: '+countdown(value.duration)+' before '+value.next);
  }
 }
 function periodCountdownText(day,seconds){
@@ -2689,7 +2703,7 @@ function positionFloatingWorkbookPage(){
   const right=rail?.width?Math.min(pane.right,rail.left-6):pane.right-8;
   box.style.width='64px';
   box.style.left=Math.max(32,(right-pane.left)/scale-parent.clientLeft-32)+'px';
-  box.style.top=(height/2)+'px';return;
+  box.style.top=(height/2)+'px';if(box.dataset.miniX){box.style.left=(Number(box.dataset.miniX)*width)+'px';box.style.top=(Number(box.dataset.miniY)*height)+'px';}return;
  }
  const pane=parent.getBoundingClientRect(),scale=parent.offsetWidth?pane.width/parent.offsetWidth:1;
  const index=floatingPageSelection??floatingPagePhase??0;
@@ -2731,7 +2745,7 @@ floatingPageMinimize.addEventListener('pointerdown',event=>event.stopPropagation
 floatingPageMinimize.addEventListener('click',event=>{
  event.stopPropagation();finishFloatingPageDrag();
  const minimized=floatingPageBox.classList.toggle('page-box-minimized');
- floatingPageMinimize.textContent=minimized?'Pages':'−';
+ floatingPageMinimize.textContent=minimized?'P':'−';
  floatingPageMinimize.setAttribute('aria-expanded',String(!minimized));
  const title=minimized?'Restore page box':'Minimize page box to the side';
  floatingPageMinimize.setAttribute('aria-label',title);floatingPageMinimize.title=title;
@@ -2967,7 +2981,7 @@ function installLessonAnswerControls(doc){
   style.id='practice-answer-layout';
   style.textContent=`
    .lesson :is(.im-c-problem__heading-title,.native-cooldown>h2,.im-c-card-heading__title):has(>.practice-answer-toggle){display:flex;align-items:center;gap:.4em;text-wrap:wrap!important}
-   .practice-answer-toggle{order:2;margin-inline-start:auto;flex:none;padding:5px 10px;min-height:36px;border:1px solid var(--site-accent,#377fa9);border-radius:6px;background:var(--site-tint,#edf5ff);color:var(--site-ink,#173c5b);font:700 14px Arial,sans-serif;cursor:pointer}
+   .practice-answer-toggle{box-sizing:border-box;height:44px;max-height:44px;order:2;margin-inline-start:auto;flex:none;padding:5px 10px;min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--site-accent,#377fa9);border-radius:6px;background:var(--site-tint,#edf5ff);color:var(--site-ink,#173c5b);font:700 14px Arial,sans-serif;cursor:pointer}
    .practice-answer-toggle[aria-expanded="true"]{background:var(--site-accent,#377fa9);color:white}
    .practice-answer-layout.is-open{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:clamp(8px,2vw,20px)}
    .practice-answer-layout>*{min-width:0;overflow-wrap:anywhere}
@@ -3002,7 +3016,9 @@ function installLessonAnswerControls(doc){
   answer.id ||= 'lesson-answer-'+(index+1);
   button.setAttribute('aria-controls',answer.id);
   function setExpanded(expanded){
-   button.textContent=expanded?'Hide Answer':'Answer';
+   button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'+(expanded?'<path d="m3 3 18 18"/>':'')+'</svg>';
+   button.setAttribute('aria-label',expanded?'Hide secondary view':'Show secondary view');
+   button.title='Toggle view';
    button.setAttribute('aria-expanded',String(expanded));
    answer.open=expanded;
    answer.hidden=!expanded;
@@ -3050,7 +3066,7 @@ function installHeadingControlsMenu(doc,heading){
    .lesson :is(h1,h2):has(>.heading-controls-menu){display:flex;align-items:center;gap:.4em;overflow:visible;text-wrap:wrap!important}
    .heading-controls-menu{position:relative;order:3;flex:none;margin-inline-start:auto;font:700 14px Arial,sans-serif}
    .practice-answer-toggle+.heading-controls-menu{margin-inline-start:0}
-   .heading-controls-menu>summary{list-style:none;cursor:pointer;padding:8px 9px;border:1px solid var(--site-accent,#377fa9);border-radius:6px;background:var(--site-tint,#edf5ff);color:var(--site-ink,#173c5b)}
+   .heading-controls-menu>summary{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;display:flex;align-items:center;justify-content:center;list-style:none;cursor:pointer;padding:8px 9px;border:1px solid var(--site-accent,#377fa9);border-radius:6px;background:var(--site-tint,#edf5ff);color:var(--site-ink,#173c5b)}
    .heading-controls-menu>summary::-webkit-details-marker{display:none}
    .heading-controls-panel{position:absolute;inset-inline-end:0;top:calc(100% + 4px);z-index:30;width:min(182px,calc(100vw - 16px));box-sizing:border-box;padding:6px;overflow:auto;background:white;border:1px solid var(--site-accent,#377fa9);border-radius:6px;box-shadow:0 4px 12px #0003}
    .heading-controls-panel:popover-open{position:fixed;inset:auto;margin:0}
@@ -3753,7 +3769,7 @@ function supplementalMaterial(lessonKey,section){
 function supplementalDocument(title,body,credit){
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+
   CONTENT_CSS+CONTENT_FIX_CSS+popoutLessonCSS()+
-  'body{background:#f5f9ff}.lesson img,.lesson figure,.lesson figure svg{max-width:100%;height:auto}.lesson mjx-container svg{max-width:none}.lesson figure{margin:16px 0}.answer-card{background:white;border:1px solid #adc5dd;border-radius:9px;padding:12px 16px;margin:12px 0;overflow:auto}</style></head><body><main class="lesson">'+
+  'body{background:#f5f9ff}.lesson img,.lesson figure,.lesson figure svg{max-width:100%;height:auto}.lesson mjx-container svg{max-width:none}.lesson figure{margin:16px 0}.supplemental-visual{margin:0 auto!important;padding:12px!important;max-width:1200px!important}.supplemental-visual>h1{margin:0 0 12px!important}.supplemental-visual figure{display:flex;justify-content:center;align-items:center;width:100%;margin:8px auto!important}.supplemental-visual figure img{display:block;width:min(100%,850px)!important;max-width:100%!important;height:auto!important;object-fit:contain}.supplemental-visual figure svg{display:block;width:min(100%,850px);height:auto;margin:auto}.answer-card{background:white;border:1px solid #adc5dd;border-radius:9px;padding:12px 16px;margin:12px 0;overflow:auto}</style></head><body><main class="lesson '+(title==='Visual'?'supplemental-visual':'supplemental-answer')+'">'+
   CONTENT_GLYPHS+TEACHER_GLYPHS+'<h1>'+title+'</h1>'+body+
   (credit?'<footer class="credit">Lesson materials © Illustrative Mathematics®. <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC 4.0</a>.</footer>':'')+
   '</main></body></html>';
@@ -4204,9 +4220,13 @@ function pickStudent(){
  const period=studentResultPeriod(),run=studentRunVersion,result=$('student-tools-result');
  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  const chosen=pool[Math.floor(Math.random()*pool.length)];
- const rounds=5;
- const duration=8000;
- result.textContent='Selecting…';
+ const duration=5000;
+ result.replaceChildren();
+ const flashingName=document.createElement('span');
+ flashingName.className='selected-student-name';
+ flashingName.textContent='Selecting…';
+ result.appendChild(flashingName);
+ result.setAttribute('aria-live','off');
  function reveal(){
   if(run!==studentRunVersion||period!==studentResultPeriod())return;
   studentFlashTimer=null;
@@ -4219,58 +4239,16 @@ function pickStudent(){
   emphasizeStudentNames('selector');glitterSelectedStudent();
   $('student-drive-status').textContent='';
  }
- if(!reduced){
-  result.classList.add('is-roulette');
-  result.setAttribute('aria-live','off');
-  const viewport=document.createElement('div');viewport.className='student-reel-viewport';
-  viewport.setAttribute('aria-hidden','true');
-  const tape=document.createElement('div');tape.className='student-reel-tape';
-  viewport.appendChild(tape);result.replaceChildren(viewport);
-  let rowHeight=(viewport.clientHeight||360)/5;
-  result.style.setProperty('--student-reel-row-height',rowHeight+'px');
-  let leadingRows=Math.ceil(viewport.clientHeight/(2*rowHeight))+2;
-  let finalIndex=leadingRows+names.length*rounds+names.indexOf(chosen);
-  const appendName=index=>{
-   const row=document.createElement('div');row.className='student-reel-name';
-   row.textContent=names[((index-leadingRows)%names.length+names.length)%names.length];
-   tape.appendChild(row);
-  };
-  for(let i=0;i<=finalIndex+leadingRows+2;i++)appendName(i);
-  const reelFrames=()=>{
-   const center=(viewport.clientHeight-rowHeight)/2;
-   const ease='cubic-bezier(.65,0,.35,1)';
-   const frame=(index,time)=>({
-    transform:'translateY('+(center-index*rowHeight)+'px)',
-    offset:time/duration,easing:ease
-   });
-   const frames=[
-    frame(leadingRows,0),
-    frame(finalIndex,duration)
-   ];
-   frames.forEach(item=>{item.easing='linear';});
-   return frames;
-  };
-  const centerReel=()=>{
-   rowHeight=(viewport.clientHeight||360)/5;
-   result.style.setProperty('--student-reel-row-height',rowHeight+'px');
-   const needed=Math.ceil(viewport.clientHeight/(2*rowHeight))+2;
-   while(leadingRows<needed){
-    const row=document.createElement('div');row.className='student-reel-name';
-    row.textContent=names[leadingRows%names.length];tape.prepend(row);
-    leadingRows++;finalIndex++;
-   }
-   while(tape.children.length<=finalIndex+needed+2)appendName(tape.children.length);
-   studentReelAnimation?.effect?.setKeyframes(reelFrames());
-  };
-  centerReel();
-  studentReelAnimation=tape.animate(reelFrames(),{
-   duration,easing:'linear',fill:'both'
-  });
-  const observer=new ResizeObserver(centerReel);
-  observer.observe(viewport);
-  studentReelCleanup=()=>observer.disconnect();
+ const started=Date.now();
+ function flashNextName(){
+  if(run!==studentRunVersion||period!==studentResultPeriod())return;
+  const remaining=duration-(Date.now()-started);
+  if(remaining<=0){reveal();return;}
+  if(!reduced)flashingName.textContent=names[Math.floor(Math.random()*names.length)];
+  studentFlashTimer=setTimeout(flashNextName,Math.min(100,remaining));
  }
- studentFlashTimer=setTimeout(reveal,duration);
+ if(reduced)studentFlashTimer=setTimeout(reveal,duration);
+ else flashNextName();
 }
 function makeStudentGroups(){
  rememberStudentInputs();
@@ -4456,14 +4434,24 @@ function moveToolToLayer(panel,layer){
  if(panel.tagName==='DIALOG'||panel.parentElement===layer)return;
  if(typeof layer.moveBefore==='function'&&panel.isConnected)layer.moveBefore(panel,null);else layer.appendChild(panel);
 }
+function pane2FloatingBounds(){
+ const pane=$('materials-dialog').getBoundingClientRect();
+ const rail=$('presentation-toolbar')?.getBoundingClientRect();
+ const right=Math.max(pane.left+1,Math.min(pane.right,rail?.width?rail.left-6:innerWidth-8));
+ const left=Math.max(0,pane.left),top=Math.max(0,pane.top);
+ return {left,top,width:Math.max(1,right-left),height:Math.max(1,Math.min(pane.bottom,innerHeight)-top)};
+}
 function placePopout(panel,inPane2=false){
  inPane2=false; // Classroom tools stay within Pane 3.
  if(!panel||panel.id==='materials-dialog'||panel.id==='presentation-lesson-panel')return;
  if(['framing-dialog','objective-vocabulary-panel'].includes(panel.id)){
   if(panel.tagName!=='DIALOG'&&panel.parentElement!==document.body)document.body.appendChild(panel);
   panel.dataset.freePosition='true';panel.dataset.popoutPlacement='float';panel.dataset.paneDefaultApplied='true';
-  const w=Math.min(420,innerWidth-16),header=$('learning-header'),headerBottom=header?.getBoundingClientRect().bottom||0,top=Math.max(8,Math.min(Math.ceil(headerBottom)+8,innerHeight-98)),availableHeight=Math.max(90,innerHeight-top-8);
-  for(const [k,v] of Object.entries({position:'fixed',left:Math.max(8,innerWidth-w-8)+'px',top:top+'px',right:'auto',bottom:'auto',width:w+'px',height:'auto','max-width':'calc(100vw - 16px)','max-height':availableHeight+'px','min-width':'0','min-height':'0',margin:'0',transform:'none',overflow:'auto','box-sizing':'border-box'}))panel.style.setProperty(k,v,'important');
+  const bounds=pane2FloatingBounds();
+  const width=Math.min(420,Math.max(240,bounds.width*.55),Math.max(1,bounds.width-16));
+  const maxHeight=Math.max(90,Math.min(300,bounds.height-16));
+  for(const [k,v] of Object.entries({position:'fixed',left:(bounds.left+bounds.width-width-8)+'px',top:bounds.top+'px',right:'auto',bottom:'auto',width:width+'px',height:'auto','max-width':width+'px','max-height':maxHeight+'px','min-width':'0','min-height':'0',margin:'0',transform:'none',overflow:'auto','box-sizing':'border-box'}))panel.style.setProperty(k,v,'important');
+  panel.style.setProperty('top',Math.max(bounds.top,bounds.top+bounds.height-panel.getBoundingClientRect().height-8)+'px','important');
   enableFloatingControls(panel,panel.querySelector('.framing-dialog-header,.objective-vocabulary-header'));highlightPopout(panel);syncToolPane3();return;
  }
  document.body.classList.remove('writing-board-docked','calculator-docked','calculator-screen-expanded');
@@ -5909,7 +5897,7 @@ function enableFloatingControls(panel,handle){
  grip.style.cssText='position:absolute;right:0;bottom:0;z-index:200;width:32px;height:30px;padding:0;border:1px solid #93badc;border-radius:6px 0 6px 0;background:#dceeff;color:#173c5b;font:700 22px Arial;cursor:nwse-resize;touch-action:none';
  panel.appendChild(grip);
  let drag=null;
- function bounds(){return {width:win.visualViewport?.width||win.innerWidth,height:win.visualViewport?.height||win.innerHeight};}
+ function bounds(){return pane2FloatingBounds();}
  function place(left,top,width,height){
   if(adjustableGroup()&&panel.dataset.popoutPlacement==='pane3'){
    const parent=panel.parentElement,bounds=parent.getBoundingClientRect();
@@ -5926,9 +5914,9 @@ function enableFloatingControls(panel,handle){
    return;
   }
   if(panel.id!=='materials-dialog'&&panel.dataset.popoutPlacement==='pane3'&&!adjustableGroup()){placePopout(panel,false);return;}
-  const b=bounds(),w=Math.max(120,Math.min(width,b.width-16)),h=Math.max(90,Math.min(height,b.height-16));
-  const x=Math.max(8,Math.min(left,b.width-w-8)),y=Math.max(8,Math.min(top,b.height-h-8));
-  for(const [key,value]of Object.entries({position:'fixed',left:x+'px',top:y+'px',right:'auto',bottom:'auto',width:w+'px',height:h+'px','max-width':(b.width-16)+'px','max-height':(b.height-16)+'px','min-width':'0','min-height':'0',margin:'0',transform:'none',overflow:'auto','box-sizing':'border-box'}))panel.style.setProperty(key,value,'important');
+  const b=bounds(),w=Math.min(Math.max(120,width),b.width),h=Math.min(Math.max(90,height),b.height);
+  const x=Math.max(b.left,Math.min(left,b.left+b.width-w)),y=Math.max(b.top,Math.min(top,b.top+b.height-h));
+  for(const [key,value]of Object.entries({position:'fixed',left:x+'px',top:y+'px',right:'auto',bottom:'auto',width:w+'px',height:h+'px','max-width':b.width+'px','max-height':b.height+'px','min-width':'0','min-height':'0',margin:'0',transform:'none',overflow:'auto','box-sizing':'border-box'}))panel.style.setProperty(key,value,'important');
   if(panel.id==='class-shoutout-pane')moveToolToLayer(panel,pane2ToolLayer());
   panel.dataset.freePosition='true';panel.dataset.popoutPlacement='float';syncToolPane3();panel.dataset.paneDefaultApplied='true';const placement=panel.querySelector('.popout-placement-toggle');if(placement){placement.textContent=panel.id==='class-shoutout-pane'?'Expand':'Back to Pane 3';placement.setAttribute('aria-pressed','true');}delete panel.dataset.fullHeightDefault;highlightPopout(panel);
   if(panel.id==='browser-pane-fallback'||panel.id==='youtube-tool-pane'||panel.id==='student-tools-pane')syncWebToolsDock();
@@ -6059,7 +6047,7 @@ html body.tools-third-pane #learning-header #objective-phase-progress>.objective
 #floating-lesson-title button{background:#fff19a;color:#285575;border:1px solid #e4ce69;border-radius:7px;font:bold 20px Arial;cursor:pointer;padding:3px 8px;flex:none;}
 #floating-lesson-title.is-mini .header-lesson-title{display:none!important;}
 </style><script>
-(()=>{const title=document.querySelector('.header-lesson-title');const progress=document.getElementById('objective-phase-progress');if(!title||!progress)return;const host=document.createElement('div');host.id='floating-lesson-title';const btn=document.createElement('button');btn.type='button';btn.textContent='−';btn.title='Minimize lesson title';host.append(title,btn);document.body.append(host);let mini=false,manual=null,drag=null;const page=document.getElementById("floating-workbook-pages");host.style.touchAction="none";host.style.cursor="move";function position(){const r=progress.getBoundingClientRect();if(r.width<1||r.height<1){host.style.display='none';return;}host.style.display='flex';host.style.maxWidth=Math.max(40,r.width-12)+'px';const q=page?.getBoundingClientRect();const w=host.offsetWidth,h=host.offsetHeight;let x=r.left+(r.width-w)/2,y=r.bottom+8;if(q?.width&&q.height&&!page.classList.contains('page-box-minimized')){y=q.top+(q.height-h)/2;if(q.left-w-8>=r.left)x=q.left-w-8;else if(q.right+8+w<=r.right)x=q.right+8;else{ x=r.left+(r.width-w)/2;y=q.bottom+8; }}if(manual&&!mini){x=manual.x;y=manual.y;}if(mini){const rail=document.getElementById('presentation-toolbar')?.getBoundingClientRect();x=(rail?.width?rail.left:innerWidth)-w-6;y=r.bottom+8;}host.style.top=Math.max(0,Math.min(innerHeight-h-8,y))+'px';host.style.left=Math.max(0,Math.min(innerWidth-w-8,x))+'px';}btn.addEventListener('click',()=>{mini=!mini;host.classList.toggle('is-mini',mini);btn.textContent=mini?'T':'−';btn.title=mini?'Restore lesson title':'Minimize lesson title';position();});host.addEventListener('pointerdown',e=>{if(mini||e.target.closest('button')||(e.pointerType==='mouse'&&e.button!==0))return;const r=host.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:r.left,top:r.top};host.setPointerCapture(e.pointerId);e.preventDefault();});host.addEventListener('pointermove',e=>{if(drag?.id!==e.pointerId)return;manual={x:drag.left+e.clientX-drag.x,y:drag.top+e.clientY-drag.y};position();e.preventDefault();});for(const t of ['pointerup','pointercancel','lostpointercapture'])host.addEventListener(t,()=>{drag=null;});host.addEventListener('dblclick',e=>{if(!e.target.closest('button')){manual=null;position();}});if(page)new MutationObserver(()=>requestAnimationFrame(position)).observe(page,{attributes:true,attributeFilter:['style','class','hidden'],childList:true,subtree:true});const ro=new ResizeObserver(position);ro.observe(progress);ro.observe(host);if(page)ro.observe(page);window.addEventListener('resize',position);window.addEventListener('scroll',position,true);new MutationObserver(position).observe(document.body,{attributes:true,attributeFilter:['class']});position();})();
+(()=>{const title=document.querySelector('.header-lesson-title');const progress=document.getElementById('objective-phase-progress');if(!title||!progress)return;const host=document.createElement('div');host.id='floating-lesson-title';const btn=document.createElement('button');btn.type='button';btn.textContent='−';btn.title='Minimize lesson title';host.append(title,btn);document.body.append(host);let mini=false,manual=null,drag=null;const page=document.getElementById("floating-workbook-pages");host.style.touchAction="none";host.style.cursor="move";function position(){const r=progress.getBoundingClientRect();if(r.width<1||r.height<1){host.style.display='none';return;}host.style.display='flex';host.style.maxWidth=Math.max(40,r.width-12)+'px';const q=page?.getBoundingClientRect();const w=host.offsetWidth,h=host.offsetHeight;let x=r.left+(r.width-w)/2,y=r.bottom+8;if(q?.width&&q.height&&!page.classList.contains('page-box-minimized')){y=q.top+(q.height-h)/2;if(q.left-w-8>=r.left)x=q.left-w-8;else if(q.right+8+w<=r.right)x=q.right+8;else{ x=r.left+(r.width-w)/2;y=q.bottom+8; }}if(manual&&!mini){x=manual.x;y=manual.y;}if(mini){const rail=document.getElementById('presentation-toolbar')?.getBoundingClientRect();x=(rail?.width?rail.left:innerWidth)-w-6;y=r.bottom+8;}if(mini&&host.dataset.miniX){x=Number(host.dataset.miniX);y=Number(host.dataset.miniY);}host.style.top=Math.max(0,Math.min(innerHeight-h-8,y))+'px';host.style.left=Math.max(0,Math.min(innerWidth-w-8,x))+'px';}btn.addEventListener('click',()=>{mini=!mini;host.classList.toggle('is-mini',mini);btn.textContent=mini?'T':'−';btn.title=mini?'Restore lesson title':'Minimize lesson title';position();});host.addEventListener('pointerdown',e=>{if(mini||e.target.closest('button')||(e.pointerType==='mouse'&&e.button!==0))return;const r=host.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:r.left,top:r.top};host.setPointerCapture(e.pointerId);e.preventDefault();});host.addEventListener('pointermove',e=>{if(drag?.id!==e.pointerId)return;manual={x:drag.left+e.clientX-drag.x,y:drag.top+e.clientY-drag.y};position();e.preventDefault();});for(const t of ['pointerup','pointercancel','lostpointercapture'])host.addEventListener(t,()=>{drag=null;});host.addEventListener('dblclick',e=>{if(!e.target.closest('button')){manual=null;position();}});if(page)new MutationObserver(()=>requestAnimationFrame(position)).observe(page,{attributes:true,attributeFilter:['style','class','hidden'],childList:true,subtree:true});const ro=new ResizeObserver(position);ro.observe(progress);ro.observe(host);if(page)ro.observe(page);window.addEventListener('resize',position);window.addEventListener('scroll',position,true);new MutationObserver(position).observe(document.body,{attributes:true,attributeFilter:['class']});position();})();
 </script><style id="floating-label-default-size">html body #floating-workbook-pages>.objective-phase-page{font-size:26px!important;} html body #floating-lesson-title #header-lesson-name{font-size:26px!important;}</style>
 <style id="compact-navigation-rail-style">
 #compact-navigation-rail{display:none!important}
@@ -6507,4 +6495,163 @@ html body #student-tools-pane[data-mode="groups"][data-popout-placement="pane3"]
 }
 html body #student-tools-pane[data-mode="groups"] .student-tools-body{padding-bottom:36px!important}
 </style>
+<style id="blended-lesson-icons">
+html body :is(#lesson-flow-pane,#materials-dialog,#learning-header,#objective-side-slot) :is(.phase-section-icon,.lesson-phase-icon,.objective-phase-icon){
+ background:transparent!important;background-image:none!important;
+ box-shadow:none!important;border-color:transparent!important;
+ color:var(--site-ink,#173c5b)!important;
+}
+</style>
+<style id="themed-page-number">
+html body #floating-workbook-pages,
+html body #floating-workbook-pages>.objective-phase-page,
+html body #floating-workbook-pages>#floating-page-minimize{
+ background:var(--site-tint,#dceeff)!important;
+ background-image:none!important;
+ color:var(--site-ink,#173c5b)!important;
+ border-color:var(--site-border,#93badc)!important;
+ box-shadow:none!important;
+}
+html body #floating-workbook-pages::before,
+html body #floating-workbook-pages::after,
+html body #floating-workbook-pages>.objective-phase-page::before,
+html body #floating-workbook-pages>.objective-phase-page::after{
+ background:var(--site-tint,#dceeff)!important;
+ border-color:var(--site-border,#93badc)!important;
+}
+</style>
+<style id="always-visible-icon-pane">
+html body.workspace-window #presentation-toolbar{
+ display:flex!important;visibility:visible!important;opacity:1!important;
+ position:fixed!important;right:3px!important;top:0!important;bottom:0!important;
+ z-index:2147483646!important;pointer-events:auto!important;
+}
+</style>
+<style id="inline-passing-time">
+html body #objective-phase-progress:has(>#objective-passing-time:not([hidden])){
+ grid-template-columns:repeat(5,minmax(0,1fr))!important;
+}
+html body :is(#objective-phase-progress,#material-phase-progress)>.school-passing-time{
+ display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;
+ width:auto;min-width:0;gap:5px;box-sizing:border-box;margin:0;
+ padding:4px 6px;border:1px solid var(--site-border,#93badc);
+ border-radius:7px;background:var(--site-tint,#dceeff);color:var(--site-ink,#173c5b);
+ font:700 14px/1.2 Arial,sans-serif;overflow:hidden;
+}
+html body :is(#objective-phase-progress,#material-phase-progress)>.school-passing-time[hidden]{display:none!important}
+html body .school-passing-time .passing-time-label{text-transform:none;letter-spacing:normal;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html body .school-passing-time .passing-time-countdown{font-size:inherit;white-space:nowrap}
+html body .school-passing-time.active{border-color:var(--site-accent,#377fa9);box-shadow:inset 0 -3px var(--site-accent,#377fa9)}
+html body #material-phase-progress:has(>#material-passing-time:not([hidden])){grid-template-columns:repeat(5,minmax(0,1fr))!important}
+</style>
+<script id="floating-lesson-text-wrap">
+(()=>{
+ let pending=false;
+ function update(){
+  pending=false;
+  const frame=document.getElementById('material-frame');
+  try{
+   const doc=frame?.contentDocument,main=doc?.querySelector('main.lesson');
+   if(!main)return;
+   if(!doc.getElementById('popup-wrap-heading-width')){
+    const style=doc.createElement('style');style.id='popup-wrap-heading-width';
+    style.textContent=`
+     main.lesson:has(#lesson-popup-wrap-space) :is(h1,h2,h3,.im-c-card-heading__title,.im-c-problem__heading-title){display:block!important;position:relative!important;box-sizing:border-box!important;width:auto!important;min-height:64px;padding-right:140px!important}
+     main.lesson:has(#lesson-popup-wrap-space) :is(h1,h2,h3,.im-c-card-heading__title,.im-c-problem__heading-title)>.heading-controls-menu{position:absolute!important;right:12px!important;top:50%!important;transform:translateY(-50%)}
+     main.lesson:has(#lesson-popup-wrap-space) :is(h1,h2,h3,.im-c-card-heading__title,.im-c-problem__heading-title)>.practice-answer-toggle{position:absolute!important;right:80px!important;top:50%!important;transform:translateY(-50%)}
+    `;
+    doc.head.appendChild(style);
+   }
+   let space=doc.getElementById('lesson-popup-wrap-space');
+   const panels=['framing-dialog','objective-vocabulary-panel'].map(id=>document.getElementById(id));
+   const popup=panels.find(panel=>panel?.dataset.popoutPlacement==='float'&&!panel.hidden&&
+    (panel.tagName!=='DIALOG'||panel.open)&&panel.getBoundingClientRect().width);
+   if(!popup||!frame.hasAttribute('srcdoc')||main.matches('.supplemental-visual,.supplemental-answer')){space?.remove();return;}
+   const box=popup.getBoundingClientRect(),view=frame.getBoundingClientRect();
+   if(box.bottom<=view.top||box.top>=view.bottom||box.left>=view.right){space?.remove();return;}
+   const scale=(doc.documentElement.clientWidth||view.width)/view.width;
+   const mainBox=main.getBoundingClientRect();
+   const left=(box.left-view.left)*scale-mainBox.left;
+   const width=Math.min(main.clientWidth,mainBox.right-(box.left-view.left)*scale+10);
+   if(left<180||width<=0){space?.remove();return;}
+   if(!space){
+    space=doc.createElement('div');space.id='lesson-popup-wrap-space';
+    space.setAttribute('aria-hidden','true');main.prepend(space);
+   }
+   const top=Math.max(0,(box.top-view.top)*scale-mainBox.top-8);
+   const height=Math.max(top+1,(box.bottom-view.top)*scale-mainBox.top+8);
+   const css='float:right;width:'+width+'px;height:'+height+'px;shape-outside:inset('+top+'px 0 0 0);shape-margin:10px;pointer-events:none;';
+   if(space.style.cssText!==css)space.style.cssText=css;
+  }catch(e){/* External lesson websites control their own layout. */}
+ }
+ function schedule(){if(!pending){pending=true;requestAnimationFrame(update);}}
+ for(const id of ['framing-dialog','objective-vocabulary-panel']){
+  const panel=document.getElementById(id);
+  if(panel){
+   new MutationObserver(schedule).observe(panel,{attributes:true,attributeFilter:['style','open','hidden']});
+   new ResizeObserver(schedule).observe(panel);
+  }
+ }
+ const frame=document.getElementById('material-frame');
+ frame?.addEventListener('load',()=>{
+  try{frame.contentDocument?.addEventListener('scroll',schedule,{passive:true,capture:true});}catch(e){}
+  schedule();
+ });
+ window.addEventListener('resize',schedule);
+ window.addEventListener('scroll',schedule,{passive:true,capture:true});
+ schedule();
+})();
+</script>
+<style id="narrow-passing-time-segment">
+html body #objective-phase-progress:has(>#objective-passing-time:not([hidden])),
+html body #material-phase-progress:has(>#material-passing-time:not([hidden])){
+ grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,.168fr)!important;
+}
+html body :is(#objective-passing-time,#material-passing-time){
+ padding:3px!important;justify-content:center!important;
+}
+html body :is(#objective-passing-time,#material-passing-time)>.passing-time-label{display:none!important}
+html body :is(#objective-passing-time,#material-passing-time)>.passing-time-countdown{
+ font-size:clamp(10px,1.2vw,16px)!important;
+}
+</style>
+<style id="passing-time-theme-cleanup">
+html body :is(#objective-passing-time,#material-passing-time){background:var(--site-tint,#dceeff)!important;color:var(--site-ink,#173c5b)!important}
+html body :is(#objective-passing-time,#material-passing-time) .passing-time-countdown{color:var(--site-ink,#173c5b)!important}
+html body :is(#objective-passing-time,#material-passing-time) .passing-time-track{background:transparent!important}
+html body :is(#objective-passing-time,#material-passing-time) .passing-time-track>span{background:var(--site-accent,#377fa9)!important}
+</style>
+<style id="matching-minimized-labels">
+html body #floating-workbook-pages.page-box-minimized,html body #floating-lesson-title.is-mini{box-sizing:border-box!important;width:68px!important;height:32px!important;min-width:68px!important;max-width:68px!important;min-height:32px!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:12px!important;touch-action:none!important;cursor:grab!important}
+html body #floating-workbook-pages.page-box-minimized>#floating-page-minimize,html body #floating-lesson-title.is-mini>button{position:static!important;transform:none!important;box-sizing:border-box!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;font:700 20px/1 Arial,sans-serif!important;touch-action:none!important;cursor:grab!important;border-radius:12px!important}
+</style>
+<script id="draggable-minimized-labels">
+(()=>{
+ for(const [id,cls] of [['floating-workbook-pages','page-box-minimized'],['floating-lesson-title','is-mini']]){
+  const el=document.getElementById(id);if(!el)continue;
+  let drag=null,suppress=false;
+  el.addEventListener('pointerdown',e=>{
+   if(!el.classList.contains(cls)||(e.pointerType==='mouse'&&e.button!==0))return;
+   const r=el.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:r.left,top:r.top,moved:false};suppress=false;
+   el.setPointerCapture(e.pointerId);e.stopImmediatePropagation();
+  },true);
+  el.addEventListener('pointermove',e=>{
+   if(!drag||drag.id!==e.pointerId)return;
+   if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6&&!drag.moved)return;
+   drag.moved=true;suppress=true;
+   const rail=document.getElementById('presentation-toolbar')?.getBoundingClientRect();
+   const x=Math.max(0,Math.min((rail?.width?rail.left:innerWidth)-el.offsetWidth-6,drag.left+e.clientX-drag.x));
+   const y=Math.max(0,Math.min(innerHeight-el.offsetHeight,drag.top+e.clientY-drag.y));
+   if(id==='floating-workbook-pages'){
+    const parent=el.offsetParent,r=parent.getBoundingClientRect();
+    el.dataset.miniX=(x+el.offsetWidth/2-r.left)/r.width;el.dataset.miniY=(y+el.offsetHeight/2-r.top)/r.height;
+    positionFloatingWorkbookPage();
+   }else{el.dataset.miniX=x;el.dataset.miniY=y;el.style.left=x+'px';el.style.top=y+'px';}
+   e.preventDefault();e.stopImmediatePropagation();
+  },true);
+  for(const type of ['pointerup','pointercancel'])el.addEventListener(type,e=>{if(drag?.id===e.pointerId){drag=null;if(el.hasPointerCapture(e.pointerId))el.releasePointerCapture(e.pointerId);}},true);
+  el.addEventListener('click',e=>{if(suppress){suppress=false;e.preventDefault();e.stopImmediatePropagation();}},true);
+ }
+})();
+</script>
 </body></html>
